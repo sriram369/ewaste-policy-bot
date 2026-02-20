@@ -1,7 +1,8 @@
 import os
 from langchain_community.document_loaders import PyPDFDirectoryLoader, PyPDFLoader
-from langchain_ollama import OllamaEmbeddings, OllamaLLM
+from langchain_huggingface import HuggingFaceEmbeddings
 from langchain_community.vectorstores import FAISS
+from langchain_groq import ChatGroq
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 from langchain_core.prompts import PromptTemplate
 from langchain_core.output_parsers import StrOutputParser
@@ -9,7 +10,13 @@ from langchain_core.runnables import RunnablePassthrough
 
 KNOWLEDGE_BASE_DIR = "./knowledge_base"
 VECTOR_DB_DIR = "./faiss_db"
-EMBED_MODEL = "nomic-embed-text"
+
+# Embedding model — runs on CPU locally and on Streamlit Cloud, no API key needed
+EMBED_MODEL = "all-MiniLM-L6-v2"
+
+# Groq model names — free tier, no GPU needed
+GROQ_MODEL_STANDARD = "llama-3.3-70b-versatile"    # standard policy queries
+GROQ_MODEL_COMPLEX   = "deepseek-r1-distill-llama-70b"  # complex legal reasoning
 
 # Keywords that strongly suggest a policy/compliance question
 _POLICY_KEYWORDS = {
@@ -67,12 +74,22 @@ Direct answer (with citations):"""
 )
 
 
-def _get_embeddings() -> OllamaEmbeddings:
-    return OllamaEmbeddings(model=EMBED_MODEL)
+def _get_embeddings() -> HuggingFaceEmbeddings:
+    return HuggingFaceEmbeddings(
+        model_name=EMBED_MODEL,
+        model_kwargs={"device": "cpu"},
+        encode_kwargs={"normalize_embeddings": True},
+    )
 
 
 def _get_text_splitter() -> RecursiveCharacterTextSplitter:
     return RecursiveCharacterTextSplitter(chunk_size=1000, chunk_overlap=200)
+
+
+def _get_llm(complex_mode: bool = False):
+    # Reads GROQ_API_KEY from environment automatically
+    model = GROQ_MODEL_COMPLEX if complex_mode else GROQ_MODEL_STANDARD
+    return ChatGroq(model=model, temperature=0)
 
 
 def _format_docs(docs) -> str:
@@ -86,13 +103,13 @@ def init_rag_pipeline() -> FAISS:
 
     Fast path: if faiss_db already exists on disk, loads and returns it instantly.
     First-time path: reads all PDFs recursively from knowledge_base/, chunks them,
-    embeds with nomic-embed-text, and persists to disk as a FAISS index.
+    embeds with all-MiniLM-L6-v2, and persists to disk as a FAISS index.
 
     Returns the FAISS vectorstore object.
     """
     embeddings = _get_embeddings()
 
-    # Fast path — vector store already built, just load from disk
+    # Fast path — vector store already built, load from disk
     if os.path.exists(VECTOR_DB_DIR) and os.listdir(VECTOR_DB_DIR):
         vectorstore = FAISS.load_local(
             VECTOR_DB_DIR,
@@ -105,17 +122,16 @@ def init_rag_pipeline() -> FAISS:
     if not os.path.exists(KNOWLEDGE_BASE_DIR):
         os.makedirs(KNOWLEDGE_BASE_DIR)
 
-    # recursive=True walks all subfolders so it finds PDFs in nested category folders
     loader = PyPDFDirectoryLoader(KNOWLEDGE_BASE_DIR, recursive=True)
     docs = loader.load()
 
     if not docs:
         raise ValueError(
             f"No PDFs found in '{KNOWLEDGE_BASE_DIR}'. "
-            "Add PDF documents to the knowledge_base/ folder before initializing."
+            "Add PDF documents to the knowledge_base/ subfolders before initializing."
         )
 
-    # Tag each chunk with its source category (derived from the subfolder name)
+    # Tag each chunk with its source category (subfolder name)
     for doc in docs:
         source_path = doc.metadata.get("source", "")
         relative = source_path.replace(os.path.abspath(KNOWLEDGE_BASE_DIR), "").strip("/")
@@ -135,18 +151,10 @@ def query_rag(query_text: str, use_deepseek: bool = False) -> str:
     """
     Queries the RAG pipeline with a user question.
 
-    - Connects to the existing FAISS index on disk (no re-ingestion).
-    - Retrieves the 6 most relevant chunks from the legal documents.
-    - Routes to qwen2.5:7b for standard queries.
-    - Routes to deepseek-r1 for complex legal reasoning (when use_deepseek=True).
-    - Returns an answer that always cites the specific law section.
-
-    Args:
-        query_text:   The user's compliance question.
-        use_deepseek: If True, uses DeepSeek-R1 for chain-of-thought legal reasoning.
-
-    Returns:
-        Answer string with section/article citations.
+    - Loads FAISS index from disk.
+    - Retrieves top 8 most relevant chunks.
+    - Routes to llama-3.3-70b (standard) or deepseek-r1 (complex reasoning).
+    - Returns a cited, grounded answer.
     """
     if not os.path.exists(VECTOR_DB_DIR) or not os.listdir(VECTOR_DB_DIR):
         return (
@@ -155,7 +163,6 @@ def query_rag(query_text: str, use_deepseek: bool = False) -> str:
         )
 
     embeddings = _get_embeddings()
-
     vectorstore = FAISS.load_local(
         VECTOR_DB_DIR,
         embeddings,
@@ -164,14 +171,11 @@ def query_rag(query_text: str, use_deepseek: bool = False) -> str:
 
     retriever = vectorstore.as_retriever(
         search_type="similarity",
-        search_kwargs={"k": 8}  # increased from 6 — wider net catches edge-case sections
+        search_kwargs={"k": 8}
     )
 
-    model_name = "deepseek-r1" if use_deepseek else "qwen2.5:7b"
-    # temperature=0 for deterministic, grounded legal answers — no creative guessing
-    llm = OllamaLLM(model=model_name, temperature=0)
+    llm = _get_llm(complex_mode=use_deepseek)
 
-    # Modern LCEL chain
     chain = (
         {"context": retriever | _format_docs, "question": RunnablePassthrough()}
         | CITATION_PROMPT
@@ -183,19 +187,13 @@ def query_rag(query_text: str, use_deepseek: bool = False) -> str:
 
 
 def _is_policy_question(text: str) -> bool:
-    """
-    Returns True if the message looks like a compliance/policy question.
-    Uses keyword matching — fast, no extra LLM call needed.
-    Short greetings and casual messages return False.
-    """
+    """Returns True if the message looks like a compliance/policy question."""
     text_lower = text.lower()
     words = text_lower.split()
 
-    # Very short messages are almost always casual
     if len(words) <= 3:
         return False
 
-    # Check for any policy-related keyword in the message
     for keyword in _POLICY_KEYWORDS:
         if keyword in text_lower:
             return True
@@ -206,23 +204,12 @@ def _is_policy_question(text: str) -> bool:
 def respond(query_text: str, use_deepseek: bool = False) -> str:
     """
     Main entry point called by app.py for every user message.
-
-    Routes the message to the right handler:
-    - Casual / greetings / general questions → conversational LLM response
-    - Policy / compliance / legislation questions → full RAG pipeline with citations
-
-    Args:
-        query_text:   The user's message.
-        use_deepseek: If True, uses DeepSeek-R1 for policy questions.
-
-    Returns:
-        Response string — either conversational or a cited policy answer.
+    Routes casual messages to conversational LLM, policy questions through RAG.
     """
     if _is_policy_question(query_text):
         return query_rag(query_text, use_deepseek=use_deepseek)
 
-    # Casual conversation — respond naturally without touching the vector store
-    llm = OllamaLLM(model="qwen2.5:7b", temperature=0.7)
+    llm = _get_llm(complex_mode=False)
     chain = CONVERSATIONAL_PROMPT | llm | StrOutputParser()
     return chain.invoke({"question": query_text})
 
@@ -230,16 +217,8 @@ def respond(query_text: str, use_deepseek: bool = False) -> str:
 def ingest_single_pdf(file_path: str) -> int:
     """
     Adds a single PDF into the existing FAISS vector store.
-
-    Used by app.py Tab 3 when a user uploads a new document through the UI.
-    Merges new chunks into the existing index and saves back to disk.
-    Safe to call while the app is running.
-
-    Args:
-        file_path: Absolute or relative path to the PDF file to ingest.
-
-    Returns:
-        Number of new chunks added to the vector store.
+    Used by app.py Tab 3 for live document uploads.
+    Returns number of new chunks added.
     """
     if not os.path.exists(file_path):
         raise FileNotFoundError(f"PDF not found at path: {file_path}")
@@ -252,9 +231,7 @@ def ingest_single_pdf(file_path: str) -> int:
     text_splitter = _get_text_splitter()
     splits = text_splitter.split_documents(docs)
 
-    # Build a small index for just the new doc, then merge into the existing one
     new_index = FAISS.from_documents(documents=splits, embedding=embeddings)
-
     existing_index = FAISS.load_local(
         VECTOR_DB_DIR,
         embeddings,

@@ -1,5 +1,5 @@
-# Generated vector store — rebuild by running the app
-faiss_db/
+# Streamlit secrets — add GROQ_API_KEY here locally, set on Streamlit Cloud dashboard
+.streamlit/secrets.toml
 
 # Source PDFs — add manually to knowledge_base/ subfolders (see README)
 knowledge_base/**/*.pdf

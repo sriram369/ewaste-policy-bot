@@ -1,7 +1,13 @@
 import os
 import streamlit as st
-from brain import init_rag_pipeline, respond, ingest_single_pdf
 from metal_calculator import calculate_recovery_value
+
+# Inject Groq API key from Streamlit secrets into the environment
+# so brain.py can access it without importing streamlit directly
+if "GROQ_API_KEY" in st.secrets:
+    os.environ["GROQ_API_KEY"] = st.secrets["GROQ_API_KEY"]
+
+from brain import init_rag_pipeline, respond, ingest_single_pdf
 
 UPLOADS_DIR = "./knowledge_base/uploads"
 
