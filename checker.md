@@ -231,6 +231,22 @@ Changes made:
 
 ---
 
+### HOTFIX — Groq Model Decommissioned
+**Date: 2026-02-19**
+
+`deepseek-r1-distill-llama-70b` was fully removed from Groq's platform.
+
+**Fix:** Replaced with `openai/gpt-oss-120b` — Groq's largest current production model.
+
+| Role | Old Model | New Model |
+|---|---|---|
+| Standard queries | `llama-3.3-70b-versatile` | `llama-3.3-70b-versatile` (unchanged) |
+| Complex reasoning | `deepseek-r1-distill-llama-70b` | `openai/gpt-oss-120b` |
+
+UI toggle label updated from "Use DeepSeek-R1" → "Use large model (120B) for complex legal reasoning".
+
+---
+
 ## PROJECT STATUS: COMPLETE
 
 All 9 steps done. App runs locally and on Streamlit Cloud.
