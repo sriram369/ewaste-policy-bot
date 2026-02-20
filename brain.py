@@ -34,9 +34,9 @@ VECTOR_DB_DIR = "./faiss_db"
 # Embedding model — runs on CPU locally and on Streamlit Cloud, no API key needed
 EMBED_MODEL = "all-MiniLM-L6-v2"
 
-# Groq model names — free tier, no GPU needed
-GROQ_MODEL_STANDARD = "llama-3.3-70b-versatile"    # standard policy queries
-GROQ_MODEL_COMPLEX   = "deepseek-r1-distill-llama-70b"  # complex legal reasoning
+# Groq model names — production models (Feb 2026)
+GROQ_MODEL_STANDARD = "llama-3.3-70b-versatile"  # standard policy queries
+GROQ_MODEL_COMPLEX  = "openai/gpt-oss-120b"      # complex legal reasoning (largest production model)
 
 # Keywords that strongly suggest a policy/compliance question
 _POLICY_KEYWORDS = {

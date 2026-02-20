@@ -53,7 +53,7 @@ tab1, tab2, tab3 = st.tabs(["Policy Chat", "Metal Calculator", "Document Upload"
 
 with tab1:
     # DeepSeek toggle lives above the chat history
-    use_deepseek = st.toggle("Use DeepSeek-R1 for complex legal reasoning", value=False)
+    use_deepseek = st.toggle("Use large model (120B) for complex legal reasoning", value=False)
 
     # Initialize chat history in session state
     if "messages" not in st.session_state:
