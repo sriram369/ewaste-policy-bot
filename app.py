@@ -79,7 +79,13 @@ with tab1:
         # Get and stream assistant response
         with st.chat_message("assistant"):
             with st.spinner("Searching documents..."):
-                response = respond(prompt, use_deepseek=use_deepseek)
+                try:
+                    response = respond(prompt, use_deepseek=use_deepseek)
+                except Exception as e:
+                    if "AuthenticationError" in type(e).__name__ or "auth" in str(e).lower() or "api_key" in str(e).lower():
+                        response = "⚠️ Groq API key error. Please check that **GROQ_API_KEY** is correctly set in your Streamlit secrets panel (Manage app → Secrets)."
+                    else:
+                        response = f"⚠️ An error occurred: {e}"
             st.markdown(response)
 
         st.session_state["messages"].append({"role": "assistant", "content": response})
