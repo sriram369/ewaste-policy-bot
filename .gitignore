@@ -1,0 +1,20 @@
+# Generated vector store — rebuild by running the app
+faiss_db/
+
+# Source PDFs — add manually to knowledge_base/ subfolders (see README)
+knowledge_base/**/*.pdf
+
+# Evaluation output
+evaluation_results.txt
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+.env
+
+# macOS
+.DS_Store
+
+# Uploads from the app UI
+knowledge_base/uploads/
