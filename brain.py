@@ -8,6 +8,26 @@ from langchain_core.prompts import PromptTemplate
 from langchain_core.output_parsers import StrOutputParser
 from langchain_core.runnables import RunnablePassthrough
 
+def _ensure_groq_key() -> None:
+    """
+    Ensures GROQ_API_KEY is in os.environ.
+    - When running via Streamlit: app.py already sets it from st.secrets.
+    - When running directly (testing, evaluate.py): loads from .streamlit/secrets.toml.
+    """
+    if os.environ.get("GROQ_API_KEY"):
+        return
+    try:
+        import tomllib
+        with open(".streamlit/secrets.toml", "rb") as f:
+            secrets = tomllib.load(f)
+        key = secrets.get("GROQ_API_KEY", "")
+        if key:
+            os.environ["GROQ_API_KEY"] = key
+    except Exception:
+        pass
+
+_ensure_groq_key()
+
 KNOWLEDGE_BASE_DIR = "./knowledge_base"
 VECTOR_DB_DIR = "./faiss_db"
 
@@ -77,7 +97,6 @@ Direct answer (with citations):"""
 def _get_embeddings() -> HuggingFaceEmbeddings:
     return HuggingFaceEmbeddings(
         model_name=EMBED_MODEL,
-        model_kwargs={"device": "cpu"},
         encode_kwargs={"normalize_embeddings": True},
     )
 
