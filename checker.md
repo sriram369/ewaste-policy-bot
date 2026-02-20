@@ -161,7 +161,7 @@ Real Feb 19, 2026 spot prices used:
 ---
 
 ### STEP 7 — Build `evaluate.py` — RAGAS Evaluation
-**Status: RUNNING**
+**Status: COMPLETE**
 **Depends on: STEP 5 (brain working)**
 
 What was built:
@@ -196,10 +196,60 @@ Changes made:
 
 ---
 
+---
+
+### STEP 9 — Streamlit Cloud Deployment
+**Status: COMPLETE**
+
+**Problem:** Local Ollama models (`qwen2.5:7b`, `deepseek-r1`, `nomic-embed-text`) cannot run on Streamlit Cloud.
+
+**Solution — switched to cloud-compatible stack:**
+| Component | Local (was) | Cloud (now) |
+|---|---|---|
+| LLM Standard | `qwen2.5:7b` via Ollama | `llama-3.3-70b-versatile` via Groq API |
+| LLM Complex | `deepseek-r1` via Ollama | `deepseek-r1-distill-llama-70b` via Groq API |
+| Embeddings | `nomic-embed-text` via Ollama | `all-MiniLM-L6-v2` via HuggingFace (CPU, no API key) |
+| Vector store | FAISS (unchanged) | FAISS (unchanged) |
+
+**New packages added:** `langchain-groq`, `langchain-huggingface`, `sentence-transformers`
+
+**Issues fixed during deployment:**
+| Issue | Fix |
+|---|---|
+| Meta tensor error (Python 3.14 + Apple Silicon + PyTorch) | Removed `device="cpu"` — let sentence-transformers auto-detect |
+| Groq key not available when brain.py runs outside Streamlit | Added `_ensure_groq_key()` — reads from `secrets.toml` as fallback |
+| `groq.AuthenticationError` crashing the app | Added try/except in chat UI — shows user-friendly error message |
+| Stale Groq API key | User generated fresh key from console.groq.com |
+
+**FAISS index rebuilt** with `all-MiniLM-L6-v2` embeddings (384-dim) — 487 chunks committed to repo so Streamlit Cloud doesn't need to rebuild on startup.
+
+**Secrets setup:**
+- Local: `.streamlit/secrets.toml` (gitignored) — `GROQ_API_KEY = "gsk_..."`
+- Streamlit Cloud: set via Manage app → Settings → Secrets panel
+
+**GitHub repo:** https://github.com/sriram369/ewaste-policy-bot
+
+---
+
 ## PROJECT STATUS: COMPLETE
 
-All 8 steps done. App is fully functional and ready to run:
-```
+All 9 steps done. App runs locally and on Streamlit Cloud.
+
+**Run locally:**
+```bash
 cd "/Users/sriram/Downloads/Policy BOT"
 python3 -W ignore -m streamlit run app.py
 ```
+
+**Streamlit Cloud:** https://share.streamlit.io → connect `sriram369/ewaste-policy-bot`
+
+**Final file state:**
+| File | Status |
+|---|---|
+| `brain.py` | Groq + HuggingFace embeddings + FAISS + routing + citations |
+| `app.py` | Chat UI + calculator + upload + secrets injection |
+| `metal_calculator.py` | Real Feb 2026 rates |
+| `evaluate.py` | RAGAS eval — Faithfulness 0.775, Answer Relevancy 0.657 |
+| `faiss_db/` | Pre-built index committed — 487 chunks, 384-dim |
+| `.streamlit/config.toml` | Dark GovTech theme |
+| `requirements.txt` | All 9 dependencies pinned |
